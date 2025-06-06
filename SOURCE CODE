@@ -1,0 +1,140 @@
+import cv2
+import pytesseract
+from PIL import Image
+import os
+import sys # Import sys module to access command-line arguments
+
+# --- Configuration ---
+# IMPORTANT: Specify the path to the Tesseract executable if it's not in your system's PATH.
+# For example:
+# pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+# For Linux/macOS, it might be '/usr/local/bin/tesseract' or similar.
+# If Tesseract is in your PATH, you can comment out or remove this line.
+# pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe' # Example Windows path
+
+# --- Functions ---
+
+def preprocess_image(image_path):
+    """
+    Loads an image and applies basic preprocessing steps for OCR.
+    Preprocessing steps include:
+    1. Grayscaling: Converts the image to grayscale to simplify processing.
+    2. Binarization (Thresholding): Converts the grayscale image to a binary image
+       (pure black and white) to improve text contrast.
+    3. Noise Reduction (Optional, using median blur): Helps remove small specks and noise.
+    """
+    try:
+        # Load the image using OpenCV
+        img = cv2.imread(image_path)
+
+        if img is None:
+            # Check if the file exists but is not a valid image (e.g., corrupted, wrong format)
+            if os.path.exists(image_path):
+                raise IOError(f"Error: Could not read image file at '{image_path}'. "
+                              "It might be corrupted or not a supported image format.")
+            else:
+                raise FileNotFoundError(f"Error: Image not found at '{image_path}'")
+
+        print(f"Image '{image_path}' loaded successfully.")
+
+        # Convert to grayscale
+        gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        print("Image converted to grayscale.")
+
+        # Apply adaptive thresholding to get a binary image.
+        # This helps in handling varying lighting conditions across the image.
+        # cv2.ADAPTIVE_THRESH_GAUSSIAN_C: A weighted sum of neighborhood values where weights are Gaussian window.
+        # cv2.THRESH_BINARY: Pixels greater than the threshold are white, otherwise black.
+        # 11: Block size - size of a pixel neighborhood that is used to calculate a threshold value.
+        # 2: C - a constant subtracted from the mean or weighted mean.
+        binary_img = cv2.adaptiveThreshold(gray_img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                           cv2.THRESH_BINARY, 11, 2)
+        print("Image binarized using adaptive thresholding.")
+
+        # Optional: Apply median blur for noise reduction.
+        # This is useful for images with salt-and-pepper noise.
+        # 3: Kernel size for the median blur filter.
+        denoised_img = cv2.medianBlur(binary_img, 3)
+        print("Image denoised using median blur (optional step).")
+
+        return denoised_img
+
+    except FileNotFoundError as e:
+        print(e)
+        return None
+    except IOError as e:
+        print(e)
+        return None
+    except Exception as e:
+        print(f"An unexpected error occurred during image preprocessing: {e}")
+        return None
+
+def extract_text_from_image(image):
+    """
+    Extracts text from a preprocessed image using Tesseract OCR engine.
+    """
+    if image is None:
+        return "Error: No valid image provided for text extraction."
+
+    try:
+        # Use pytesseract to perform OCR on the image.
+        # The image is first converted to a PIL Image object as pytesseract often
+        # works well with PIL images.
+        # lang='eng' specifies English language. You can change this for other languages.
+        # config='--psm 6' sets the page segmentation mode to 6 (Assume a single uniform block of text).
+        # This can be tuned for different layouts.
+        text = pytesseract.image_to_string(Image.fromarray(image), lang='eng', config='--psm 6')
+        print("Text extraction complete.")
+        return text
+    except pytesseract.TesseractNotFoundError:
+        return ("Error: Tesseract is not installed or its executable is not in your PATH.\n"
+                "Please install Tesseract-OCR (https://tesseract-ocr.github.io/tessdoc/Installation.html)"
+                " and ensure its path is correctly configured in this script or system PATH.")
+    except Exception as e:
+        return f"An error occurred during text extraction: {e}"
+
+# --- Main Execution ---
+if _name_ == "_main_":
+    print("Starting Image to Text Conversion Project...")
+
+    image_path = None
+    # Check if an image path was provided as a command-line argument
+    if len(sys.argv) > 1:
+        image_path = sys.argv[1]
+        print(f"Using image path from command line: '{image_path}'")
+    else:
+        # If no argument, prompt the user for the image path
+        print("No image path provided as a command-line argument.")
+        image_path = input("Please enter the path to the image file: ")
+
+    # Check if an image path was actually provided (either via arg or input)
+    if not image_path:
+        print("No image path was provided. Exiting.")
+    elif not os.path.exists(image_path):
+        print(f"Error: The specified image file '{image_path}' does not exist.")
+        print("Please ensure the path is correct and the file is accessible.")
+    else:
+        # Step 1: Preprocess the image
+        processed_img = preprocess_image(image_path)
+
+        if processed_img is not None:
+            # Step 2: Extract text
+            extracted_text = extract_text_from_image(processed_img)
+
+            # Step 3: Display the extracted text
+            print("\n--- Extracted Text ---")
+            print(extracted_text)
+            print("----------------------")
+
+            # Optional: Display the preprocessed image (for debugging/visualization)
+            # You might need to comment out cv2.imshow lines if running in an environment
+            # without a display or for automated processing.
+            try:
+                cv2.imshow("Original Image (for reference)", cv2.imread(image_path))
+                cv2.imshow("Preprocessed Image (Grayscale & Binarized)", processed_img)
+                cv2.waitKey(0) # Waits indefinitely until a key is pressed
+                cv2.destroyAllWindows() # Closes all OpenCV windows
+            except Exception as e:
+                print(f"Could not display images. This might happen in environments without a graphical display: {e}")
+
+    print("Project finished.")
